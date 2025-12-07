@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Nieśmiertelnik - Mapa</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    #map { height: 600px; width: 100%; }
+    #status { padding: 10px; background: #1a1a2e; color: #16c784; }
+    .ff-marker { background: #3b82f6; border: 2px solid white; border-radius: 50%; }
+    .alert { background: #ef4444 !important; animation: pulse 1s infinite; }
+    @keyframes pulse { 50% { opacity: 0.5; } }
+  </style>
+</head>
+<body>
+  <div id="status">Łączenie...</div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const GPS_ORIGIN = { lat: 52.2297, lon: 21.0122 };
+    const map = L.map('map').setView([GPS_ORIGIN.lat, GPS_ORIGIN.lon], 19);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    const markers = new Map();
+    const ws = new WebSocket('wss://niesmiertelnik.replit.app/ws');
+
+    ws.onopen = () => {
+      document.getElementById('status').textContent = '🟢 Połączono';
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === 'tag_telemetry') {
+        const { firefighter, position, vitals } = data;
+        const lat = GPS_ORIGIN.lat + (position.y / 111320);
+        const lon = GPS_ORIGIN.lon + (position.x / 71695);
+
+        if (!markers.has(firefighter.id)) {
+          const icon = L.divIcon({
+            className: 'ff-marker',
+            html: `<div style="width:20px;height:20px;line-height:20px;text-align:center;color:white;font-size:10px;">${firefighter.name.charAt(0)}</div>`,
+            iconSize: [20, 20]
+          });
+          markers.set(firefighter.id, L.marker([lat, lon], { icon }).addTo(map));
+        } else {
+          markers.get(firefighter.id).setLatLng([lat, lon]);
+        }
+
+        markers.get(firefighter.id).bindTooltip(`
+          <b>${firefighter.name}</b><br>
+          HR: ${vitals.heart_rate_bpm} bpm<br>
+          Piętro: ${position.floor}<br>
+          Stan: ${vitals.motion_state}
+        `);
+      }
+
+      if (data.type === 'alert') {
+        const marker = markers.get(data.firefighter?.id);
+        if (marker) marker.getElement()?.classList.add('alert');
+        alert(`ALERT: ${data.alert_type} - ${data.firefighter?.name}`);
+      }
+    };
+
+    ws.onclose = () => {
+      document.getElementById('status').textContent = '🔴 Rozłączono';
+    };
+  </script>
+</body>
+</html>
